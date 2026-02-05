@@ -1,0 +1,13 @@
+name = "paper-cost-ui"
+compatibility_date = "2024-01-01"
+
+# D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "paper_tube_production"
+database_id = "your-database-id-here"
+# Run: npx wrangler d1 create paper_tube_production
+# Then replace the database_id above with the actual ID
+
+# Pages Configuration
+pages_build_output_dir = "out"

@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Paper Tube Manufacturing System - Setup Instructions
 
-## Getting Started
+## 🚀 Quick Start
 
-First, run the development server:
+### 1. Install Dependencies
+```bash
+npm install
+```
+
+### 2. Set Up Cloudflare D1 Database
+
+```bash
+# Create the D1 database
+npx wrangler d1 create paper_tube_production
+```
+
+Copy the `database_id` from the output and update it in `wrangler.toml`
+
+### 3. Create Database Tables
+
+```bash
+# Run the schema migration
+npx wrangler d1 execute paper_tube_production --local --file=./schema.sql
+npx wrangler d1 execute paper_tube_production --remote --file=./schema.sql
+```
+
+### 4. Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 5. Deploy to Cloudflare Pages
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+##Push to GitHub
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin your-repo-url
+git push -u origin main
+```
 
-## Learn More
+## Connect to Cloudflare Pages
+1. Go to Cloudflare Pages Dashboard
+2. Click "Create a project"
+3. Connect your GitHub repository
+4. Configure build settings:
+   - Build command: `npm run build`
+   - Build output directory: `out`
+5. Add D1 database binding in Settings → Functions
 
-To learn more about Next.js, take a look at the following resources:
+## 📊 Using the System
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Add Production Record**: Fill in all 8 cost modules
+2. **Real-time Calculations**: Grand total updates as you type
+3. **View Records**: See all production history in the table below
+4. **Edit/Delete**: Manage existing records
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🧮 Calculation Logic
 
-## Deploy on Vercel
+- **Material Costs** (Paper, Paste, Outer Paste): `cost ÷ outdone`
+- **Operational Costs** (Packing, Labour, EB, Overheads, Food): `cost ÷ production`
+- **Grand Total**: Sum of all 8 cost-per-tube values
+- **Rejection**: `production - outdone`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📁 Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+paper-cost-ui/
+├── app/
+│   ├── page.tsx          # Main production management interface
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Global styles
+├── components/
+│   └── Navbar.tsx        # Navigation component
+├── functions/
+│   └── api/
+│       └── production.ts # Cloudflare Workers API endpoints
+├── lib/
+│   └── db-utils.ts       # Database utilities and calculations
+├── schema.sql            # D1 database schema
+├── wrangler.toml         # Cloudflare configuration
+└── package.json          # Dependencies
+```
+
+## 🔧 Environment Variables
+
+For Cloudflare Pages deployment, add these in Settings → Environment variables:
+- D1 database binding is configured in wrangler.toml
+
+## 🐛 Troubleshooting
+
+**Database not found**: Make sure you've created the D1 database and updated the `database_id` in wrangler.toml
+
+**API errors**: Ensure D1 binding is configured in Cloudflare Pages Functions settings
+
+**Zero division errors**: The system automatically handles division by zero (returns 0)
