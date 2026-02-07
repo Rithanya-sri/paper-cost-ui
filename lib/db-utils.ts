@@ -87,15 +87,15 @@ export function calculateProductionRecord(inputs: ProductionInputs): CalculatedR
 
     // 1. Paper Cost
     const paper_cost = roundTo2Decimals(inputs.paper_quantity_kg * inputs.paper_rate);
-    const paper_cost_per_tube = safeDivide(paper_cost, outdone);
+    const paper_cost_per_tube = safeDivide(paper_cost, production);
 
     // 2. Paste Cost
     const paste_cost = roundTo2Decimals(inputs.paste_quantity * inputs.paste_rate);
-    const paste_cost_per_tube = safeDivide(paste_cost, outdone);
+    const paste_cost_per_tube = safeDivide(paste_cost, production);
 
     // 3. Outer Paste Cost
     const outer_paste_cost = roundTo2Decimals(inputs.outer_paste_quantity * inputs.outer_paste_rate);
-    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, outdone);
+    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, production);
 
     // 4. Packing Cost
     const packing_cost = roundTo2Decimals(inputs.packing_quantity * inputs.packing_rate);

@@ -51,6 +51,8 @@ interface ProductionRecord {
 export default function Home() {
   const [records, setRecords] = useState<ProductionRecord[]>([]);
   const [editingRecord, setEditingRecord] = useState<ProductionRecord | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -90,19 +92,19 @@ export default function Home() {
     rejection: 0,
   });
 
-  // Real-time calculation - ORIGINAL LOGIC
+  // Real-time calculation
   useEffect(() => {
     const safeDivide = (num: number, den: number) => (den === 0 ? 0 : Math.round((num / den) * 100) / 100);
     const round = (num: number) => Math.round(num * 100) / 100;
 
     const paper_cost = round(formData.paper_quantity_kg * formData.paper_rate);
-    const paper_cost_per_tube = safeDivide(paper_cost, formData.outdone);
+    const paper_cost_per_tube = safeDivide(paper_cost, formData.production);
 
     const paste_cost = round(formData.paste_quantity * formData.paste_rate);
-    const paste_cost_per_tube = safeDivide(paste_cost, formData.outdone);
+    const paste_cost_per_tube = safeDivide(paste_cost, formData.production);
 
     const outer_paste_cost = round(formData.outer_paste_quantity * formData.outer_paste_rate);
-    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, formData.outdone);
+    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, formData.production);
 
     const packing_cost = round(formData.packing_quantity * formData.packing_rate);
     const packing_cost_per_tube = safeDivide(packing_cost, formData.production);
@@ -150,9 +152,12 @@ export default function Home() {
   const loadRecords = async () => {
     try {
       const res = await fetch('/api/production');
+      if (!res.ok) {
+        throw new Error(`API Error: ${res.status} ${res.statusText}`);
+      }
       const data = await res.json();
       setRecords(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load records:', error);
     }
   };
@@ -161,10 +166,25 @@ export default function Home() {
     loadRecords();
   }, []);
 
+  // prevent mouse scroll from changing input values
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'number') {
+        e.preventDefault();
+      }
+    };
+    const listener = (e: Event) => handleWheel(e as WheelEvent);
+    document.addEventListener('wheel', listener, { passive: false });
+    return () => {
+      document.removeEventListener('wheel', listener);
+    };
+  }, []);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const numValue = parseFloat(value) || 0;
-    setFormData(prev => ({ ...prev, [name]: numValue >= 0 ? numValue : 0 }));
+    const numValue = parseFloat(value);
+    setFormData(prev => ({ ...prev, [name]: isNaN(numValue) ? 0 : numValue }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,25 +196,51 @@ export default function Home() {
     };
 
     try {
+      let res;
       if (editingRecord) {
-        await fetch(`/api/production/${editingRecord.id}`, {
+        // Update existing record
+        res = await fetch(`/api/production/${editingRecord.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
       } else {
-        await fetch('/api/production', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        // Check for duplicate date
+        const existingRecord = records.find(r => r.date === formData.date);
+
+        if (existingRecord) {
+          const confirmUpdate = confirm(`A record for ${new Date(formData.date).toLocaleDateString()} already exists. Do you want to update it instead?`);
+
+          if (confirmUpdate) {
+            // Switch to update mode for the existing record
+            res = await fetch(`/api/production/${existingRecord.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+          } else {
+            return; // User cancelled
+          }
+        } else {
+          // Create new record
+          res = await fetch('/api/production', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
       }
 
-      loadRecords();
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Server Error (${res.status}): ${errText}`);
+      }
+
+      await loadRecords(); // Ensure table is refreshed
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save record:', error);
-      alert('Failed to save record');
+      alert(`Failed to save record: ${error.message}`);
     }
   };
 
@@ -257,6 +303,14 @@ export default function Home() {
     }
   };
 
+  // Pagination Logic
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = records.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(records.length / itemsPerPage);
+
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+
   return (
     <>
       <Navbar />
@@ -299,7 +353,7 @@ export default function Home() {
               }}>
                 <div className="form-group" style={{ marginBottom: 0, maxWidth: '250px' }}>
                   <label className="form-label" style={{ fontSize: '0.9rem', color: '#1e293b', fontWeight: 600 }}>
-                    📅 Date
+                    Date
                   </label>
                   <input
                     type="date"
@@ -320,7 +374,7 @@ export default function Home() {
                   color: '#1e293b',
                   marginBottom: '1rem',
                 }}>
-                  💰 Cost Details
+                  Cost Details
                 </h3>
 
                 {/* Paper Cost */}
@@ -332,24 +386,28 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    📄 Paper Cost
+                    Paper Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Quantity (kg)</label>
-                      <input type="number" name="paper_quantity_kg" className="form-input" value={formData.paper_quantity_kg || ''} onChange={handleChange} step="0.01" min="0" placeholder="250" />
+                      <input type="number" name="paper_quantity_kg" className="form-input" value={formData.paper_quantity_kg || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Rate (₹/kg)</label>
-                      <input type="number" name="paper_rate" className="form-input" value={formData.paper_rate || ''} onChange={handleChange} step="0.01" min="0" placeholder="45.50" />
+                      <input type="number" name="paper_rate" className="form-input" value={formData.paper_rate || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Total Cost</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.paper_cost)} readOnly style={{ background: 'rgba(102, 126, 234, 0.08)', fontWeight: 500 }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.paper_cost)} readOnly />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Outdone</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.paper_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.paper_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -363,24 +421,28 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    🧪 Paste Cost
+                    Paste Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Quantity (kg)</label>
-                      <input type="number" name="paste_quantity" className="form-input" value={formData.paste_quantity || ''} onChange={handleChange} step="0.01" min="0" placeholder="50" />
+                      <input type="number" name="paste_quantity" className="form-input" value={formData.paste_quantity || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Rate (₹/kg)</label>
-                      <input type="number" name="paste_rate" className="form-input" value={formData.paste_rate || ''} onChange={handleChange} step="0.01" min="0" placeholder="30.00" />
+                      <input type="number" name="paste_rate" className="form-input" value={formData.paste_rate || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Total Cost</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.paste_cost)} readOnly style={{ background: 'rgba(102, 126, 234, 0.08)', fontWeight: 500 }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.paste_cost)} readOnly />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Outdone</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.paste_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.paste_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -394,24 +456,28 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    🎨 Outer Paste Cost
+                    Outer Paste Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Quantity (kg)</label>
-                      <input type="number" name="outer_paste_quantity" className="form-input" value={formData.outer_paste_quantity || ''} onChange={handleChange} step="0.01" min="0" placeholder="30" />
+                      <input type="number" name="outer_paste_quantity" className="form-input" value={formData.outer_paste_quantity || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Rate (₹/kg)</label>
-                      <input type="number" name="outer_paste_rate" className="form-input" value={formData.outer_paste_rate || ''} onChange={handleChange} step="0.01" min="0" placeholder="35.00" />
+                      <input type="number" name="outer_paste_rate" className="form-input" value={formData.outer_paste_rate || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Total Cost</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.outer_paste_cost)} readOnly style={{ background: 'rgba(102, 126, 234, 0.08)', fontWeight: 500 }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.outer_paste_cost)} readOnly />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Outdone</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.outer_paste_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.outer_paste_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -425,24 +491,28 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    📦 Packing Cost
+                    Packing Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Quantity</label>
-                      <input type="number" name="packing_quantity" className="form-input" value={formData.packing_quantity || ''} onChange={handleChange} step="0.01" min="0" placeholder="100" />
+                      <input type="number" name="packing_quantity" className="form-input" value={formData.packing_quantity || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Rate (₹)</label>
-                      <input type="number" name="packing_rate" className="form-input" value={formData.packing_rate || ''} onChange={handleChange} step="0.01" min="0" placeholder="5.00" />
+                      <input type="number" name="packing_rate" className="form-input" value={formData.packing_rate || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Total Cost</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.packing_cost)} readOnly style={{ background: 'rgba(102, 126, 234, 0.08)', fontWeight: 500 }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.packing_cost)} readOnly />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Production</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.packing_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.packing_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -456,24 +526,28 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    👷 Labour Cost
+                    Labour Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>No. of Workers</label>
-                      <input type="number" name="labour_count" className="form-input" value={formData.labour_count || ''} onChange={handleChange} step="0.01" min="0" placeholder="10" />
+                      <input type="number" name="labour_count" className="form-input" value={formData.labour_count || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Avg Wage/Day (₹)</label>
-                      <input type="number" name="labour_wage" className="form-input" value={formData.labour_wage || ''} onChange={handleChange} step="0.01" min="0" placeholder="500" />
+                      <input type="number" name="labour_wage" className="form-input" value={formData.labour_wage || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Total Labour Cost</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.labour_cost)} readOnly style={{ background: 'rgba(102, 126, 234, 0.08)', fontWeight: 500 }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.labour_cost)} readOnly />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Production</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.labour_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.labour_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -487,21 +561,27 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    ⚡ Electricity (EB) Cost
+                    Electricity (EB) Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Units Used</label>
-                      <input type="number" name="eb_units" className="form-input" value={formData.eb_units || ''} onChange={handleChange} step="0.01" min="0" placeholder="150" />
+                      <input type="number" name="eb_units" className="form-input" value={formData.eb_units || ''} onChange={handleChange} step="any" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      {/* Empty Rate Column */}
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Amount (₹)</label>
-                      <input type="number" name="eb_amount" className="form-input" value={formData.eb_amount || ''} onChange={handleChange} step="0.01" min="0" placeholder="1200" />
+                      <input type="number" name="eb_amount" className="form-input" value={formData.eb_amount || ''} onChange={handleChange} step="any" />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}></div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Production</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
+                    </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.eb_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.eb_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -515,18 +595,26 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    🏢 Overheads
+                    Overheads
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      {/* Empty Quantity Column */}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      {/* Empty Rate Column */}
+                    </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Amount (₹)</label>
-                      <input type="number" name="overheads_amount" className="form-input" value={formData.overheads_amount || ''} onChange={handleChange} step="0.01" min="0" placeholder="2000" />
+                      <input type="number" name="overheads_amount" className="form-input" value={formData.overheads_amount || ''} onChange={handleChange} step="any" />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}></div>
-                    <div className="form-group" style={{ marginBottom: 0 }}></div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Production</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
+                    </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.overheads_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.overheads_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
@@ -540,99 +628,35 @@ export default function Home() {
                   border: '1px solid rgba(102, 126, 234, 0.1)',
                 }}>
                   <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1e293b', marginBottom: '0.75rem' }}>
-                    🍽️ Food Cost
+                    Food Cost
                   </div>
-                  <div className="grid grid-4" style={{ gap: '0.75rem' }}>
+                  <div className="grid grid-5" style={{ gap: '0.75rem' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      {/* Empty Quantity Column */}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      {/* Empty Rate Column */}
+                    </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Amount (₹)</label>
-                      <input type="number" name="food_amount" className="form-input" value={formData.food_amount || ''} onChange={handleChange} step="0.01" min="0" placeholder="800" />
+                      <input type="number" name="food_amount" className="form-input" value={formData.food_amount || ''} onChange={handleChange} step="any" />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}></div>
-                    <div className="form-group" style={{ marginBottom: 0 }}></div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155' }}>Production</label>
+                      <input type="number" name="production" className="form-input" value={formData.production || ''} onChange={handleChange} step="any" />
+                    </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 700 }}>Cost/Tube</label>
-                      <input type="text" className="form-input" value={formatCurrency(calculated.food_cost_per_tube)} readOnly style={{ background: 'rgba(102, 126, 234, 0.15)', fontWeight: 700, color: '#667eea' }} />
+                      <input type="text" className="form-input" value={formatCurrency(calculated.food_cost_per_tube)} readOnly style={{ color: '#667eea' }} />
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Production Section - After Cost Section */}
-              <div style={{
-                marginBottom: '1.5rem',
-                paddingTop: '1.5rem',
-                borderTop: '1px solid rgba(102, 126, 234, 0.1)',
-              }}>
-                <h3 style={{
-                  fontSize: '1.1rem',
-                  fontWeight: 700,
-                  color: '#1e293b',
-                  marginBottom: '1rem',
-                }}>
-                  🏭 Production Details
-                </h3>
-
-                <div className="grid grid-2" style={{ gap: '1rem' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: '0.9rem', color: '#1e293b', fontWeight: 600 }}>
-                      Production (tubes) *
-                    </label>
-                    <input
-                      type="number"
-                      name="production"
-                      className="form-input"
-                      value={formData.production || ''}
-                      onChange={handleChange}
-                      step="0.01"
-                      min="0"
-                      placeholder="10000"
-                      required
-                    />
-                    <small style={{ color: '#475569', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
-                      Total tubes manufactured
-                    </small>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: '0.9rem', color: '#1e293b', fontWeight: 600 }}>
-                      Outdone (tubes) *
-                    </label>
-                    <input
-                      type="number"
-                      name="outdone"
-                      className="form-input"
-                      value={formData.outdone || ''}
-                      onChange={handleChange}
-                      step="0.01"
-                      min="0"
-                      placeholder="9500"
-                      required
-                    />
-                    <small style={{ color: '#475569', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
-                      Good tubes only
-                    </small>
-                  </div>
-                </div>
-
-                {calculated.rejection > 0 && (
-                  <div style={{
-                    marginTop: '0.75rem',
-                    padding: '0.5rem 0.75rem',
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    borderLeft: '3px solid #f59e0b',
-                    borderRadius: '0.25rem',
-                    fontSize: '0.85rem',
-                    color: '#d97706',
-                    fontWeight: 600,
-                  }}>
-                    ⚠️ Rejection: {calculated.rejection.toFixed(2)} tubes ({((calculated.rejection / formData.production) * 100).toFixed(1)}%)
-                  </div>
-                )}
               </div>
 
               {/* Submit Button */}
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem' }}>
                 <button type="submit" className="btn btn-primary btn-lg" style={{ flex: 1 }}>
-                  {editingRecord ? '💾 Update Record' : '💾 Save Record'}
+                  {editingRecord ? 'Update Record' : 'Save Record'}
                 </button>
                 {editingRecord && (
                   <button type="button" onClick={resetForm} className="btn btn-secondary btn-lg">
@@ -657,7 +681,7 @@ export default function Home() {
                 color: '#1e293b',
                 margin: 0,
               }}>
-                📊 Production Records
+                Production Records
               </h3>
             </div>
             <div className="table-container">
@@ -666,8 +690,6 @@ export default function Home() {
                   <tr>
                     <th>Date</th>
                     <th>Production</th>
-                    <th>Outdone</th>
-                    <th>Rejection</th>
                     <th>Grand Total (₹/tube)</th>
                     <th>Actions</th>
                   </tr>
@@ -675,18 +697,18 @@ export default function Home() {
                 <tbody>
                   {records.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#475569' }}>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: '#475569' }}>
                         No records found. Add your first production record above.
                       </td>
                     </tr>
                   ) : (
-                    records.map((record) => (
+                    currentItems.map((record) => (
                       <tr key={record.id}>
-                        <td>{new Date(record.date).toLocaleDateString('en-IN')}</td>
-                        <td>{record.production.toFixed(2)}</td>
-                        <td>{record.outdone.toFixed(2)}</td>
-                        <td style={{ color: record.production - record.outdone > 0 ? '#f59e0b' : '#10b981' }}>
-                          {(record.production - record.outdone).toFixed(2)}
+                        <td style={{ fontWeight: 600, color: '#1e293b' }}>
+                          {new Date(record.date).toLocaleDateString('en-IN')}
+                        </td>
+                        <td style={{ fontWeight: 600, color: '#1e293b' }}>
+                          {record.production.toFixed(2)}
                         </td>
                         <td style={{ fontWeight: 700, color: '#667eea', fontSize: '1.05rem' }}>
                           {formatCurrency(record.grand_total_cost_per_tube)}
@@ -713,6 +735,31 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {records.length > itemsPerPage && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '1.5rem', gap: '1rem' }}>
+                <button
+                  onClick={() => paginate(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="btn btn-sm btn-secondary"
+                  style={{ opacity: currentPage === 1 ? 0.5 : 1 }}
+                >
+                  Previous
+                </button>
+                <span style={{ fontSize: '0.9rem', color: '#475569', fontWeight: 600 }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => paginate(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="btn btn-sm btn-secondary"
+                  style={{ opacity: currentPage === totalPages ? 0.5 : 1 }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -750,14 +797,14 @@ export default function Home() {
                 gap: '0.5rem',
               }}>
                 {[
-                  { label: '📄 Paper', value: calculated.paper_cost_per_tube },
-                  { label: '🧪 Paste', value: calculated.paste_cost_per_tube },
-                  { label: '🎨 Outer Paste', value: calculated.outer_paste_cost_per_tube },
-                  { label: '📦 Packing', value: calculated.packing_cost_per_tube },
-                  { label: '👷 Labour', value: calculated.labour_cost_per_tube },
-                  { label: '⚡ EB', value: calculated.eb_cost_per_tube },
-                  { label: '🏢 Overheads', value: calculated.overheads_cost_per_tube },
-                  { label: '🍽️ Food', value: calculated.food_cost_per_tube },
+                  { label: 'Paper', value: calculated.paper_cost_per_tube },
+                  { label: 'Paste', value: calculated.paste_cost_per_tube },
+                  { label: 'Outer Paste', value: calculated.outer_paste_cost_per_tube },
+                  { label: 'Packing', value: calculated.packing_cost_per_tube },
+                  { label: 'Labour', value: calculated.labour_cost_per_tube },
+                  { label: 'EB', value: calculated.eb_cost_per_tube },
+                  { label: 'Overheads', value: calculated.overheads_cost_per_tube },
+                  { label: 'Food', value: calculated.food_cost_per_tube },
                 ].map((item, idx) => (
                   <div key={idx} style={{
                     fontSize: '0.75rem',
@@ -767,45 +814,34 @@ export default function Home() {
                     display: 'flex',
                     justifyContent: 'space-between',
                   }}>
-                    <span style={{ color: '#475569', fontWeight: 500 }}>{item.label}</span>
-                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                      {formatCurrency(item.value)}
-                    </span>
+                    <span style={{ color: '#64748b' }}>{item.label}:</span>
+                    <span style={{ fontWeight: 600, color: '#1e293b' }}>{formatCurrency(item.value)}</span>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Grand Total */}
+            {/* Final Total */}
             <div style={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              borderRadius: 'var(--radius-lg)',
-              padding: '1rem 1.5rem',
-              color: 'white',
-              textAlign: 'center',
-              boxShadow: '0 8px 25px rgba(102, 126, 234, 0.4)',
+              textAlign: 'right',
+              paddingLeft: '1.5rem',
+              borderLeft: '1px solid rgba(102, 126, 234, 0.2)',
             }}>
               <div style={{
-                fontSize: '0.75rem',
-                opacity: 0.95,
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                color: '#64748b',
                 marginBottom: '0.25rem',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
-                fontWeight: 600,
               }}>
                 Final Cost Per Tube
               </div>
               <div style={{
-                fontSize: '0.7rem',
-                opacity: 0.85,
-                marginBottom: '0.5rem',
-              }}>
-                (All Costs Included)
-              </div>
-              <div style={{
-                fontSize: '2rem',
+                fontSize: '2.5rem',
                 fontWeight: 800,
-                letterSpacing: '-0.02em',
+                color: '#1e293b',
+                lineHeight: 1,
+                letterSpacing: '-0.03em',
               }}>
                 {formatCurrency(calculated.grand_total_cost_per_tube)}
               </div>

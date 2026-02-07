@@ -32,26 +32,9 @@ export default function Navbar() {
                     gap: '0.75rem',
                     transition: 'all 0.3s',
                 }}>
-                    <span style={{
-                        fontSize: '2rem',
-                    }}>📄</span>
-                    <span style={{ letterSpacing: '-0.02em' }}>Paper Tube Pro</span>
-                </Link>
 
-                {/* Status Badge with High Contrast Background */}
-                <div style={{
-                    padding: '0.5rem 1.5rem',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    borderRadius: '9999px',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                }}>
-                    ✨ Production System
-                </div>
+                    <span style={{ letterSpacing: '-0.02em' }}>Paper Tube Costing</span>
+                </Link>
             </div>
         </nav>
     );

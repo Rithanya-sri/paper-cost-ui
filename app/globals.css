@@ -107,6 +107,20 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Remove number input spinners */
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* ===== UTILITY CLASSES ===== */
 
 /* Layout */
@@ -162,6 +176,10 @@ body {
 
 .grid-4 {
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.grid-5 {
+  grid-template-columns: repeat(5, 1fr);
 }
 
 /* Cards - Glassmorphism Style */
@@ -332,8 +350,8 @@ body {
 .form-input {
   width: 100%;
   padding: 0.625rem 0.875rem;
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: #ffffff;
   /* Pure white for maximum visibility of entered values */
   background: #0f172a;
@@ -385,7 +403,9 @@ body {
 /* Smooth value transitions for calculated fields */
 .form-input[readonly] {
   background: #1e293b;
-  color: #e2e8f0;
+  color: #ffffff;
+  /* Make read-only values strictly visible/white */
+  font-weight: 700;
   cursor: default;
   border-color: rgba(102, 126, 234, 0.1);
   transition: all 0.3s ease;

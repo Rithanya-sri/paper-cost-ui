@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export',  // Required for Cloudflare Pages static deployment
+  // output: 'export', // Removed to allow API routes
 };
 
 export default nextConfig;

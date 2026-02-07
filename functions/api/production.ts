@@ -21,13 +21,13 @@ function calculateRecord(data: any) {
 
     // Calculate costs
     const paper_cost = round(data.paper_quantity_kg * data.paper_rate);
-    const paper_cost_per_tube = safeDivide(paper_cost, outdone);
+    const paper_cost_per_tube = safeDivide(paper_cost, production);
 
     const paste_cost = round(data.paste_quantity * data.paste_rate);
-    const paste_cost_per_tube = safeDivide(paste_cost, outdone);
+    const paste_cost_per_tube = safeDivide(paste_cost, production);
 
     const outer_paste_cost = round(data.outer_paste_quantity * data.outer_paste_rate);
-    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, outdone);
+    const outer_paste_cost_per_tube = safeDivide(outer_paste_cost, production);
 
     const packing_cost = round(data.packing_quantity * data.packing_rate);
     const packing_cost_per_tube = safeDivide(packing_cost, production);
