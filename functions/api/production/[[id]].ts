@@ -9,6 +9,16 @@ export async function onRequest(context: { env: Env; params: any; request: Reque
     const { request, env } = context;
     const method = request.method;
 
+    // Check if DB binding exists
+    if (!env.DB) {
+        return new Response(JSON.stringify({
+            error: "Database binding 'DB' not found. Please check your Cloudflare Pages 'Settings > Functions' and add a D1 database binding named 'DB'."
+        }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
+
     // Helper to calculate all values
     function calculateRecord(data: any) {
         const { production, outdone } = data;
