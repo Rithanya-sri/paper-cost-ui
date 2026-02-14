@@ -5,5 +5,6 @@ pages_build_output_dir = "out"
 # D1 Database Binding
 [[d1_databases]]
 binding = "DB"
-database_name = "paper_tube_production"
-database_id = "your-database-id-here"
+database_name = "paper_cost_db"
+database_id = "0f2f3005-1aaa-494a-997b-fde3d05ca605"
+
